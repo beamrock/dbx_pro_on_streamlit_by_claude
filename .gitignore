@@ -1,0 +1,11 @@
+.env
+*.json
+*.pdf
+*.pptx
+*.ipynb
+*.gsheet
+desktop.ini
+DBX_DE_Associate/
+DBX_DE_Professional/
+DBX_ML_Associate/
+__pycache__/
