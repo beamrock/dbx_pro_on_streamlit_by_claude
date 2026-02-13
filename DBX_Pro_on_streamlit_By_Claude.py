@@ -214,6 +214,14 @@ def gemini_call(model, prompt, max_tokens=500):
         return None, f'{type(e).__name__}: {str(e)[:200]}'
 
 
+def is_korean(text):
+    """텍스트에 한글이 포함되어 있는지 판별"""
+    if not text:
+        return False
+    korean_chars = sum(1 for c in text if '\uac00' <= c <= '\ud7a3' or '\u3131' <= c <= '\u3163')
+    return korean_chars > len(text) * 0.05
+
+
 def translate_text(model, text, direction='kor_to_eng'):
     """Gemini를 사용하여 텍스트 번역"""
     if not text or not text.strip():
@@ -311,7 +319,7 @@ def build_qno_map(data_rows, idx_qnum):
     """q_no 기준으로 행 매핑 {번호: (sheet_row, row_data)}"""
     qno_map = {}
     for idx, row in enumerate(data_rows):
-        sheet_row = idx + 2
+        sheet_row = idx + 2 # Google Sheet rows are 1-based, and we skip header
         q_num_str = row[idx_qnum] if len(row) > idx_qnum else ''
         try:
             num = int(q_num_str.replace('Q.', '').strip())
@@ -319,6 +327,121 @@ def build_qno_map(data_rows, idx_qnum):
         except Exception:
             continue
     return qno_map
+
+def get_max_q_no(sheets_service):
+    """Pro_Kor, Pro_Eng 시트에서 가장 큰 q_no를 찾아 반환"""
+    max_q_no = 0
+    # Pro_Kor 시트에서 최대 q_no 찾기
+    kor_header, kor_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_KOR)
+    if kor_header:
+        COL_KOR = {h.strip().replace('\\n', ''): i for i, h in enumerate(kor_header)}
+        IDX_QNUM_KOR = COL_KOR.get('q_no', -1)
+        if IDX_QNUM_KOR != -1:
+            for row in kor_data_rows:
+                q_num_str = get_val(row, IDX_QNUM_KOR)
+                try:
+                    num = int(q_num_str.replace('Q.', '').strip())
+                    if num > max_q_no:
+                        max_q_no = num
+                except ValueError:
+                    pass
+    
+    # Pro_Eng 시트에서 최대 q_no 찾기
+    eng_header, eng_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_ENG)
+    if eng_header:
+        COL_ENG = {h.strip().replace('\\n', ''): i for i, h in enumerate(eng_header)}
+        IDX_QNUM_ENG = COL_ENG.get('q_no', -1)
+        if IDX_QNUM_ENG != -1:
+            for row in eng_data_rows:
+                q_num_str = get_val(row, IDX_QNUM_ENG)
+                try:
+                    num = int(q_num_str.replace('Q.', '').strip())
+                    if num > max_q_no:
+                        max_q_no = num
+                except ValueError:
+                    pass
+    return max_q_no
+
+
+def append_row_to_sheet(sheets_service, sheet_name, headers, row_dict):
+    """시트에 한 행 추가 (row_dict: {컬럼명: 값})"""
+    header_map = {h.strip().replace('\\n', ''): i for i, h in enumerate(headers)}
+    new_row_values = [''] * len(headers)
+    for col_name, value in row_dict.items():
+        if col_name in header_map:
+            new_row_values[header_map[col_name]] = value
+    sheets_service.spreadsheets().values().append(
+        spreadsheetId=SPREADSHEET_ID,
+        range=f"'{sheet_name}'!A:A",
+        valueInputOption='RAW',
+        insertDataOption='INSERT_ROWS',
+        body={'values': [new_row_values]}
+    ).execute()
+
+
+def add_new_question_synced(model, sheets_service, q_no_int, q_text, q_options,
+                            kor_headers, eng_headers):
+    """새 문제를 Pro_Kor, Pro_Eng 양쪽에 동기화하여 추가.
+    입력 언어를 자동 감지하여 각 시트에 맞는 언어로 저장."""
+    q_num_str = f"Q.{q_no_int:03d}"
+    input_is_korean = is_korean(q_text)
+
+    # --- 1) AI 분류 (subject, category, title) ---
+    status = st.empty()
+    status.text(f'AI 분류 중: {q_num_str}...')
+    subject, category, title, err = classify_row(model, q_num_str, q_text, q_options, '')
+    if not subject:
+        st.error(f'AI 분류 실패: {err}')
+        return
+    time.sleep(1)
+
+    # --- 2) AI 해설 생성 ---
+    status.text(f'해설 생성 중: {q_num_str}...')
+    desc, desc_err = generate_desc(model, q_num_str, q_text, q_options)
+    time.sleep(1)
+
+    # --- 3) 언어별 데이터 준비 ---
+    status.text(f'번역 중: {q_num_str}...')
+    if input_is_korean:
+        kor_q_text = q_text
+        kor_options = q_options
+        kor_title = title  # classify_row의 title은 한글
+        kor_desc = desc    # desc도 한글
+        eng_q_text = translate_text(model, q_text, 'kor_to_eng'); time.sleep(1)
+        eng_options = translate_text(model, q_options, 'kor_to_eng'); time.sleep(1)
+        eng_title = translate_text(model, title, 'kor_to_eng') if title else ''; time.sleep(1)
+        eng_desc = translate_text(model, desc, 'kor_to_eng') if desc else ''
+    else:
+        eng_q_text = q_text
+        eng_options = q_options
+        # 영문 입력이면 title/desc도 영문으로 다시 생성
+        eng_title = translate_text(model, title, 'kor_to_eng') if title else ''; time.sleep(1)
+        eng_desc = translate_text(model, desc, 'kor_to_eng') if desc else ''; time.sleep(1)
+        kor_q_text = translate_text(model, q_text, 'eng_to_kor'); time.sleep(1)
+        kor_options = translate_text(model, q_options, 'eng_to_kor'); time.sleep(1)
+        kor_title = title  # 이미 한글
+        kor_desc = desc    # 이미 한글
+
+    # --- 4) 양쪽 시트에 추가 ---
+    status.text(f'시트 저장 중: {q_num_str}...')
+    kor_row = {
+        'q_no': q_num_str, 'q_text': kor_q_text, 'options': kor_options,
+        'subject': subject, 'category': category,
+        'title': kor_title, 'desc': kor_desc,
+    }
+    eng_row = {
+        'q_no': q_num_str, 'q_text': eng_q_text, 'options': eng_options,
+        'subject': subject, 'category': category,
+        'title': eng_title, 'desc': eng_desc,
+    }
+
+    if kor_headers:
+        append_row_to_sheet(sheets_service, SHEET_NAME_PRO_KOR, kor_headers, kor_row)
+    if eng_headers:
+        append_row_to_sheet(sheets_service, SHEET_NAME_PRO_ENG, eng_headers, eng_row)
+
+    status.empty()
+    st.success(f"Q.{q_no_int:03d} → Pro_Kor(한글) + Pro_Eng(영문) 양쪽 시트에 추가 완료!")
 
 
 def sync_row(model, sheets_service, col_map, kor_row, eng_row, kor_sheet_row, eng_sheet_row, log_lines):
@@ -354,11 +477,11 @@ def sync_row(model, sheets_service, col_map, kor_row, eng_row, kor_sheet_row, en
 
 
 # --- Streamlit UI ---
-st.set_page_config(page_title='DBX Pro 문제 분류', layout='centered')
+st.set_page_config(page_title='DBX Pro 문제 분류', layout='wide')
 
 # 사이드바 메뉴
 MENU = {
-    '문제 자동 분류': '🏷️',
+    'Databricks Pro 문제은행 업데이트': '🏷️',
 }
 with st.sidebar:
     st.header('DBX Pro')
@@ -370,208 +493,268 @@ with st.sidebar:
         use_container_width=True,
     )
 
-# --- 페이지: 문제 자동 분류 ---
-if selected_menu == '문제 자동 분류':
-    st.title('Databricks Pro 시험 문제 자동 분류')
+# --- 페이지: Databricks Pro 문제은행 업데이트 ---
+if selected_menu == 'Databricks Pro 문제은행 업데이트':
+    st.title('Databricks Pro 문제은행 업데이트')
 
-    col1, col2 = st.columns(2)
-    with col1:
-        start_question_number = st.number_input(
-            '시작번호', min_value=1, max_value=999, value=1, step=1
-        )
-    with col2:
-        end_question_number = st.number_input(
-            '종료번호', min_value=1, max_value=999, value=111, step=1
-        )
+    # New main columns for the entire page content
+    main_col_left, main_col_right = st.columns([0.5, 0.5]) # Adjust ratio as needed for the two main sections
 
-    st.caption('Overwrite (체크 시 기존 값이 있어도 덮어쓰기)')
-    ow1, ow2, ow3, ow4 = st.columns(4)
-    with ow1:
-        ow_subject = st.checkbox('subject')
-    with ow2:
-        ow_category = st.checkbox('category')
-    with ow3:
-        ow_title = st.checkbox('title')
-    with ow4:
-        ow_desc = st.checkbox('desc')
+    with main_col_left:
+        st.subheader('기존 문제 업데이트')
+        st.markdown("---") # Visual separator
+        col1, col2 = st.columns(2)
+        with col1:
+            start_question_number = st.number_input(
+                '시작번호', min_value=1, max_value=999, value=1, step=1, key='update_start_q'
+            )
+        with col2:
+            end_question_number = st.number_input(
+                '종료번호', min_value=1, max_value=999, value=111, step=1, key='update_end_q'
+            )
 
-    if st.button('시작', type='primary', use_container_width=True):
-        if start_question_number > end_question_number:
-            st.error('시작번호가 종료번호보다 큽니다.')
-        else:
-            # 초기화
-            genai.configure(api_key=GEMINI_API_KEY)
-            model = genai.GenerativeModel(MODEL_NAME)
-            sheets_service = get_sheets_service()
+        st.caption('Overwrite (체크 시 기존 값이 있어도 덮어쓰기)')
+        ow1, ow2, ow3, ow4 = st.columns(4)
+        with ow1:
+            ow_subject = st.checkbox('subject', key='ow_subject')
+        with ow2:
+            ow_category = st.checkbox('category', key='ow_category')
+        with ow3:
+            ow_title = st.checkbox('title', key='ow_title')
+        with ow4:
+            ow_desc = st.checkbox('desc', key='ow_desc')
 
-            # 양쪽 시트 데이터 읽기
-            kor_header, kor_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_KOR)
-            eng_header, eng_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_ENG)
-
-            if not kor_header:
-                st.error('Pro_Kor 시트를 읽을 수 없습니다.')
+        if st.button('시작', type='primary', use_container_width=True, key='start_update_button'):
+            if start_question_number > end_question_number:
+                st.error('시작번호가 종료번호보다 큽니다.')
             else:
-                has_eng = len(eng_header) > 0
+                # 초기화
+                genai.configure(api_key=GEMINI_API_KEY)
+                model = genai.GenerativeModel(MODEL_NAME)
+                sheets_service = get_sheets_service()
 
-                COL = {h.strip().replace('\n', ''): i for i, h in enumerate(kor_header)}
-                IDX_SUBJ    = COL.get('subject', 0)
-                IDX_CAT     = COL.get('category', 1)
-                IDX_TITLE   = COL.get('title', 2)
-                IDX_QNUM    = COL.get('q_no', 3)
-                IDX_QTEXT   = COL.get('q_text', 4)
-                IDX_CHOICES = COL.get('options', 5)
-                IDX_DESC    = COL.get('desc', 6)
+                # 양쪽 시트 데이터 읽기
+                kor_header, kor_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_KOR)
+                eng_header, eng_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_ENG)
 
-                # q_no 기준 매핑
-                kor_qno_map = build_qno_map(kor_data_rows, IDX_QNUM)
-                eng_qno_map = build_qno_map(eng_data_rows, IDX_QNUM) if has_eng else {}
-
-                # 대상 행 필터링
-                target_nums = sorted(
-                    n for n in kor_qno_map
-                    if start_question_number <= n <= end_question_number
-                )
-
-                total = len(target_nums)
-                if total == 0:
-                    st.warning('대상 문항이 없습니다.')
+                if not kor_header:
+                    st.error('Pro_Kor 시트를 읽을 수 없습니다.')
                 else:
-                    success = 0
-                    fail = 0
-                    skip = 0
-                    fail_list = []
-                    start_time = datetime.now()
+                    has_eng = len(eng_header) > 0
 
-                    st.info(
-                        f'대상 범위: Q.{start_question_number:03d} ~ Q.{end_question_number:03d} '
-                        f'({total}문항) | 모델: {MODEL_NAME}'
+                    COL = {h.strip().replace('\n', ''): i for i, h in enumerate(kor_header)}
+                    IDX_SUBJ    = COL.get('subject', 0)
+                    IDX_CAT     = COL.get('category', 1)
+                    IDX_TITLE   = COL.get('title', 2)
+                    IDX_QNUM    = COL.get('q_no', 3)
+                    IDX_QTEXT   = COL.get('q_text', 4)
+                    IDX_CHOICES = COL.get('options', 5)
+                    IDX_DESC    = COL.get('desc', 6)
+
+                    # q_no 기준 매핑
+                    kor_qno_map = build_qno_map(kor_data_rows, IDX_QNUM)
+                    eng_qno_map = build_qno_map(eng_data_rows, IDX_QNUM) if has_eng else {}
+
+                    # 대상 행 필터링
+                    target_nums = sorted(
+                        n for n in kor_qno_map
+                        if start_question_number <= n <= end_question_number
                     )
 
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    log_area = st.empty()
-                    log_lines = []
+                    total = len(target_nums)
+                    if total == 0:
+                        st.warning('대상 문항이 없습니다.')
+                    else:
+                        success = 0
+                        fail = 0
+                        skip = 0
+                        fail_list = []
+                        start_time = datetime.now()
 
-                    for i, num in enumerate(target_nums, 1):
-                        q_label = f'Q.{num:03d}'
+                        st.info(
+                            f'대상 범위: Q.{start_question_number:03d} ~ Q.{end_question_number:03d} '
+                            f'({total}문항) | 모델: {MODEL_NAME}'
+                        )
 
-                        kor_sheet_row, kor_row = kor_qno_map[num]
-                        eng_sheet_row, eng_row = eng_qno_map.get(num, (None, []))
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        log_area = st.empty()
+                        log_lines = []
 
-                        # 기존 값 확인 (한글 시트)
-                        existing_subj = get_val(kor_row, IDX_SUBJ)
-                        existing_cat  = get_val(kor_row, IDX_CAT)
-                        existing_ttl  = get_val(kor_row, IDX_TITLE)
-                        existing_desc = get_val(kor_row, IDX_DESC)
+                        for i, num in enumerate(target_nums, 1):
+                            q_label = f'Q.{num:03d}'
 
-                        # 헤더행 제외
-                        is_header = existing_subj == 'subject'
+                            kor_sheet_row, kor_row = kor_qno_map[num]
+                            eng_sheet_row, eng_row = eng_qno_map.get(num, (None, []))
 
-                        # 분류 필요 여부
-                        need_subj = not existing_subj or is_header or ow_subject
-                        need_cat  = not existing_cat  or is_header or ow_category
-                        need_ttl  = not existing_ttl  or is_header or ow_title
-                        need_classify = need_subj or need_cat or need_ttl
+                            # 기존 값 확인 (한글 시트)
+                            existing_subj = get_val(kor_row, IDX_SUBJ)
+                            existing_cat  = get_val(kor_row, IDX_CAT)
+                            existing_ttl  = get_val(kor_row, IDX_TITLE)
+                            existing_desc = get_val(kor_row, IDX_DESC)
 
-                        # desc 생성 여부 (체크 시에만 작동)
-                        need_desc = ow_desc
+                            # 헤더행 제외
+                            is_header = existing_subj == 'subject'
 
-                        # 영문 시트 동기화 필요 여부
-                        need_sync = has_eng and eng_sheet_row is not None
+                            # 분류 필요 여부
+                            need_subj = not existing_subj or is_header or ow_subject
+                            need_cat  = not existing_cat  or is_header or ow_category
+                            need_ttl  = not existing_ttl  or is_header or ow_title
+                            need_classify = need_subj or need_cat or need_ttl
 
-                        if not need_classify and not need_desc and not need_sync:
-                            skip += 1
-                            log_lines.append(f'[{i:03d}/{total}] {q_label} -> SKIP ({existing_subj})')
-                            log_area.code('\n'.join(log_lines[-30:]))
-                            progress_bar.progress(i / total)
-                            continue
+                            # desc 생성 여부 (체크 시에만 작동)
+                            need_desc = ow_desc
 
-                        status_text.text(f'처리 중: {q_label} ({i}/{total})')
+                            # 영문 시트 동기화 필요 여부 (없는 행이면 새로 추가)
+                            need_sync = has_eng
 
-                        q_text    = get_val(kor_row, IDX_QTEXT)
-                        q_choices = get_val(kor_row, IDX_CHOICES)
-                        q_desc    = get_val(kor_row, IDX_DESC)
-
-                        # --- 1) 분류 ---
-                        if need_classify:
-                            subject, category, title, err_msg = classify_row(
-                                model, q_label, q_text, q_choices, q_desc
-                            )
-
-                            if subject:
-                                final_subj = subject        if need_subj else existing_subj
-                                final_cat  = category or '' if need_cat  else existing_cat
-                                final_ttl  = title or ''    if need_ttl  else existing_ttl
-
-                                # 한글 시트 업데이트
-                                update_range(sheets_service, SHEET_NAME_PRO_KOR,
-                                             kor_sheet_row, 'A', 'C',
-                                             [final_subj, final_cat, final_ttl])
-
-                                # 영문 시트 업데이트
-                                if eng_sheet_row:
-                                    eng_ttl = translate_text(model, final_ttl, 'kor_to_eng') if final_ttl else ''
-                                    time.sleep(1)
-                                    update_range(sheets_service, SHEET_NAME_PRO_ENG,
-                                                 eng_sheet_row, 'A', 'C',
-                                                 [final_subj, final_cat, eng_ttl])
-
-                                success += 1
-                                log_lines.append(
-                                    f'[{i:03d}/{total}] {q_label} -> {final_subj} | {final_cat} | {final_ttl}'
-                                )
-                            else:
-                                fail += 1
-                                fail_list.append(q_label)
-                                log_lines.append(
-                                    f'[{i:03d}/{total}] {q_label} -> FAIL | {err_msg}'
-                                )
+                            if not need_classify and not need_desc and not need_sync:
+                                skip += 1
+                                log_lines.append(f'[{i:03d}/{total}] {q_label} -> SKIP ({existing_subj})')
                                 log_area.code('\n'.join(log_lines[-30:]))
                                 progress_bar.progress(i / total)
-                                if i < total:
-                                    time.sleep(4)
                                 continue
-                        else:
-                            log_lines.append(f'[{i:03d}/{total}] {q_label} -> OK ({existing_subj})')
 
-                        # --- 2) desc 생성 ---
-                        if need_desc:
-                            status_text.text(f'해설 생성 중: {q_label} ({i}/{total})')
-                            desc_text, desc_err = generate_desc(model, q_label, q_text, q_choices)
-                            if desc_text:
-                                desc_col = col_idx_to_letter(IDX_DESC)
-                                update_single_cell(sheets_service, SHEET_NAME_PRO_KOR,
-                                                   kor_sheet_row, desc_col, desc_text)
-                                # 영문 시트에도 번역하여 저장
-                                if eng_sheet_row:
+                            status_text.text(f'처리 중: {q_label} ({i}/{total})')
+
+                            q_text    = get_val(kor_row, IDX_QTEXT)
+                            q_choices = get_val(kor_row, IDX_CHOICES)
+                            q_desc    = get_val(kor_row, IDX_DESC)
+
+                            # --- 1) 분류 ---
+                            if need_classify:
+                                subject, category, title, err_msg = classify_row(
+                                    model, q_label, q_text, q_choices, q_desc
+                                )
+
+                                if subject:
+                                    final_subj = subject        if need_subj else existing_subj
+                                    final_cat  = category or '' if need_cat  else existing_cat
+                                    final_ttl  = title or ''    if need_ttl  else existing_ttl
+
+                                    # 한글 시트 업데이트
+                                    update_range(sheets_service, SHEET_NAME_PRO_KOR,
+                                                 kor_sheet_row, 'A', 'C',
+                                                 [final_subj, final_cat, final_ttl])
+
+                                    # 영문 시트 업데이트 (없으면 새 행 추가)
+                                    eng_ttl = translate_text(model, final_ttl, 'kor_to_eng') if final_ttl else ''
                                     time.sleep(1)
-                                    desc_eng = translate_text(model, desc_text, 'kor_to_eng')
-                                    update_single_cell(sheets_service, SHEET_NAME_PRO_ENG,
-                                                       eng_sheet_row, desc_col, desc_eng)
-                                log_lines.append(f'  desc 생성 완료')
+                                    if eng_sheet_row:
+                                        update_range(sheets_service, SHEET_NAME_PRO_ENG,
+                                                     eng_sheet_row, 'A', 'C',
+                                                     [final_subj, final_cat, eng_ttl])
+                                    elif has_eng:
+                                        # Pro_Eng에 해당 문제가 없으면 번역하여 새 행 추가
+                                        eng_q_text = translate_text(model, q_text, 'kor_to_eng'); time.sleep(1)
+                                        eng_choices = translate_text(model, q_choices, 'kor_to_eng'); time.sleep(1)
+                                        eng_desc = translate_text(model, q_desc, 'kor_to_eng') if q_desc else ''; time.sleep(1)
+                                        eng_row_dict = {
+                                            'q_no': q_label, 'q_text': eng_q_text, 'options': eng_choices,
+                                            'subject': final_subj, 'category': final_cat,
+                                            'title': eng_ttl, 'desc': eng_desc,
+                                        }
+                                        append_row_to_sheet(sheets_service, SHEET_NAME_PRO_ENG, eng_header, eng_row_dict)
+                                        log_lines.append(f'  Pro_Eng에 새 행 추가')
+
+                                    success += 1
+                                    log_lines.append(
+                                        f'[{i:03d}/{total}] {q_label} -> {final_subj} | {final_cat} | {final_ttl}'
+                                    )
+                                else:
+                                    fail += 1
+                                    fail_list.append(q_label)
+                                    log_lines.append(
+                                        f'[{i:03d}/{total}] {q_label} -> FAIL | {err_msg}'
+                                    )
+                                    log_area.code('\n'.join(log_lines[-30:]))
+                                    progress_bar.progress(i / total)
+                                    if i < total:
+                                        time.sleep(4)
+                                    continue
                             else:
-                                log_lines.append(f'  desc 생성 실패: {desc_err}')
-                            time.sleep(1)
+                                log_lines.append(f'[{i:03d}/{total}] {q_label} -> OK ({existing_subj})')
 
-                        # --- 3) 양방향 동기화 ---
-                        if need_sync:
-                            sync_row(model, sheets_service, COL,
-                                     kor_row, eng_row, kor_sheet_row, eng_sheet_row, log_lines)
+                            # --- 2) desc 생성 ---
+                            if need_desc:
+                                status_text.text(f'해설 생성 중: {q_label} ({i}/{total})')
+                                desc_text, desc_err = generate_desc(model, q_label, q_text, q_choices)
+                                if desc_text:
+                                    desc_col = col_idx_to_letter(IDX_DESC)
+                                    update_single_cell(sheets_service, SHEET_NAME_PRO_KOR,
+                                                       kor_sheet_row, desc_col, desc_text)
+                                    # 영문 시트에도 번역하여 저장
+                                    if eng_sheet_row:
+                                        time.sleep(1)
+                                        desc_eng = translate_text(model, desc_text, 'kor_to_eng')
+                                        update_single_cell(sheets_service, SHEET_NAME_PRO_ENG,
+                                                           eng_sheet_row, desc_col, desc_eng)
+                                    # eng_sheet_row가 없는 경우는 위 분류 단계에서 이미 새 행을 추가했으므로 skip
+                                    log_lines.append(f'  desc 생성 완료')
+                                else:
+                                    log_lines.append(f'  desc 생성 실패: {desc_err}')
+                                time.sleep(1)
 
-                        log_area.code('\n'.join(log_lines[-30:]))
-                        progress_bar.progress(i / total)
+                            # --- 3) 양방향 동기화 ---
+                            if need_sync:
+                                sync_row(model, sheets_service, COL,
+                                         kor_row, eng_row, kor_sheet_row, eng_sheet_row, log_lines)
 
-                        if i < total:
-                            time.sleep(4)
+                            log_area.code('\n'.join(log_lines[-30:]))
+                            progress_bar.progress(i / total)
 
-                    # 종료 보고서
-                    end_time = datetime.now()
-                    duration = str(end_time - start_time).split('.')[0]
-                    status_text.empty()
+                            if i < total:
+                                time.sleep(4)
 
-                    st.success(
-                        f'완료! 성공: {success} | 실패: {fail} | 스킵: {skip} | '
-                        f'총: {total} | 소요: {duration}'
-                    )
-                    if fail_list:
-                        st.warning(f'실패 목록: {", ".join(fail_list)}')
+                        # 종료 보고서
+                        end_time = datetime.now()
+                        duration = str(end_time - start_time).split('.')[0]
+                        status_text.empty()
+
+                        st.success(
+                            f'완료! 성공: {success} | 실패: {fail} | 스킵: {skip} | '
+                            f'총: {total} | 소요: {duration}'
+                        )
+                        if fail_list:
+                            st.warning(f'실패 목록: {", ".join(fail_list)}')
+
+    with main_col_right:
+        st.subheader('새로운 문제 추가')
+        st.markdown("---")
+        sheets_service_right = get_sheets_service()
+        genai.configure(api_key=GEMINI_API_KEY)
+        model_right = genai.GenerativeModel(MODEL_NAME)
+
+        max_q_num = get_max_q_no(sheets_service_right)
+        st.info(f"현재 마지막 문제 번호: Q.{max_q_num:03d}")
+        st.caption("한글 또는 영문으로 입력하면 Pro_Kor(한글) + Pro_Eng(영문) 양쪽에 자동 동기화됩니다.")
+
+        st.markdown("---")
+
+        new_q_no = st.text_input('문제번호 (예: 112)', value=str(max_q_num + 1), key='new_q_no')
+        new_q_text = st.text_area('문제 내용 (한글 또는 영문)', key='new_q_text')
+        new_q_options = st.text_area('보기 (각 보기를 줄바꿈으로 구분)', key='new_q_options')
+
+        if st.button('문제 추가 (양쪽 시트 동기화)', type='primary', use_container_width=True, key='add_new_question_button'):
+            if not new_q_no.strip() or not new_q_text.strip() or not new_q_options.strip():
+                st.error("문제번호, 문제 내용, 보기를 모두 입력해주세요.")
+            else:
+                try:
+                    q_no_int = int(new_q_no.strip())
+
+                    kor_header_btn, _ = read_sheet_data(sheets_service_right, SHEET_NAME_PRO_KOR)
+                    eng_header_btn, _ = read_sheet_data(sheets_service_right, SHEET_NAME_PRO_ENG)
+
+                    if not kor_header_btn or not eng_header_btn:
+                        st.error("Pro_Kor 또는 Pro_Eng 시트 헤더를 읽을 수 없습니다.")
+                    else:
+                        add_new_question_synced(
+                            model_right, sheets_service_right,
+                            q_no_int, new_q_text.strip(), new_q_options.strip(),
+                            kor_header_btn, eng_header_btn,
+                        )
+                        st.rerun()
+                except ValueError:
+                    st.error("문제번호는 유효한 숫자로 입력해주세요.")
+                except Exception as e:
+                    st.error(f"문제 추가 중 오류 발생: {e}")
