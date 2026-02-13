@@ -29,34 +29,86 @@ MODEL_NAME = get_secret('MODEL_NAME', 'models/gemini-2.0-flash')
 
 # --- 상수 ---
 SUBJECT_LIST = [
-    'Databricks Tooling',
-    'Data Processing',
-    'Data Modeling',
-    'Security and Governance',
-    'Monitoring and Logging',
-    'Testing and Deployment',
+    'Developing Code for Data Processing',
+    'Data Ingestion and Acquisition',
+    'Data Transformation and Quality',
+    'Data Sharing and Federation',
+    'Monitoring and Alerting',
+    'Cost and Performance Optimisation',
+    'Data Security and Compliance',
+    'Data Governance',
+    'Debugging and Deploying',
+    'Data Modelling',
 ]
 
 SUBJECT_KEYWORDS = {
-    'Databricks Tooling':       ['tooling'],
-    'Data Processing':          ['processing'],
-    'Data Modeling':            ['modeling', 'modelling'],
-    'Security and Governance':  ['security', 'governance'],
-    'Monitoring and Logging':   ['monitoring', 'logging'],
-    'Testing and Deployment':   ['testing', 'deployment'],
+    'Developing Code for Data Processing': [
+        'python', 'sql', 'udf', 'pandas udf', 'asset bundle', 'dab', 'lakeflow',
+        'declarative pipeline', 'dlt', 'auto loader', 'autoloader', 'structured streaming',
+        'etl', 'cdc', 'apply changes', 'streaming table', 'materialized view',
+        'unit test', 'integration test', 'assertdataframeequal', 'assertschemaequal',
+        'spark sql', 'pyspark', 'notebook', 'jobs', 'job cluster', 'control flow',
+    ],
+    'Data Ingestion and Acquisition': [
+        'ingestion', 'acquisition', 'copy into', 'parquet', 'orc', 'avro', 'json',
+        'csv', 'xml', 'binary', 'message bus', 'cloud storage', 'append-only',
+        'batch', 'delta lake ingest',
+    ],
+    'Data Transformation and Quality': [
+        'transformation', 'cleansing', 'data quality', 'window function', 'join',
+        'aggregation', 'quarantine', 'bad data', 'expectation',
+    ],
+    'Data Sharing and Federation': [
+        'delta sharing', 'federation', 'lakehouse federation', 'd2d', 'd2o',
+        'share', 'recipient', 'provider',
+    ],
+    'Monitoring and Alerting': [
+        'monitoring', 'alerting', 'system table', 'query profiler', 'spark ui',
+        'event log', 'sql alert', 'notification', 'observability',
+    ],
+    'Cost and Performance Optimisation': [
+        'optimization', 'optimisation', 'performance', 'cost', 'deletion vector',
+        'liquid clustering', 'data skipping', 'file pruning', 'cdf',
+        'change data feed', 'query profile', 'bottleneck', 'shuffle',
+        'z-order', 'zorder', 'optimize', 'vacuum', 'compaction', 'auto-optimize',
+    ],
+    'Data Security and Compliance': [
+        'security', 'compliance', 'acl', 'row filter', 'column mask',
+        'anonymization', 'pseudonymization', 'hashing', 'tokenization',
+        'pii', 'masking', 'encryption', 'data purging', 'retention',
+    ],
+    'Data Governance': [
+        'governance', 'unity catalog', 'catalog', 'permission', 'inheritance',
+        'metadata', 'discoverable', 'privilege', 'service principal',
+    ],
+    'Debugging and Deploying': [
+        'debugging', 'deploying', 'ci/cd', 'cicd', 'asset bundle', 'git folder',
+        'troubleshoot', 'cluster log', 'job repair', 'parameter override',
+        'deployment', 'promotion',
+    ],
+    'Data Modelling': [
+        'modeling', 'modelling', 'data model', 'delta lake', 'schema',
+        'partitioning', 'liquid clustering', 'dimensional model',
+        'medallion', 'star schema', 'table design', 'clone', 'deep clone',
+        'shallow clone',
+    ],
 }
 
 PROMPT_TEMPLATE = """당신은 Databricks Certified Data Engineer Professional 시험 문제 분류 전문가입니다.
 
 아래 시험 문제를 분석하여 세 가지를 출력하세요.
 
-1) subject: 아래 6개 중 정확히 하나
-   - Databricks Tooling (Cluster, Jobs, Notebook, Repos, Workspace, API, CLI, DBFS, Widget, Scheduling)
-   - Data Processing (Spark SQL, DataFrame, Structured Streaming, Auto Loader, COPY INTO, DLT Pipeline, CDC, Batch/Stream ETL)
-   - Data Modeling (Delta Lake, Table Design, Schema, Partitioning, Z-order, OPTIMIZE, VACUUM, Medalion Architecture)
-   - Security and Governance (Unity Catalog, ACL, Priviledge, Data Masking, Encryption, Audit, Service Principal)
-   - Monitoring and Logging (Query Monitoring, Alert, Dashboard, Logging, Performance Metric, Spark UI, Event Log)
-   - Testing and Deployment (CI/CD, Test, Deployement, Promotion, Environment Management, Multiple workspaces, Version Management)
+1) subject: 아래 10개 중 정확히 하나
+   - Developing Code for Data Processing (Python, SQL, UDF, Pandas UDF, DABs, Lakeflow Spark Declarative Pipelines, Auto Loader, Structured Streaming, ETL, CDC, APPLY CHANGES, Streaming Table, Materialized View, Unit/Integration Test, Control Flow)
+   - Data Ingestion and Acquisition (Data Ingestion Pipeline, Delta Lake, Parquet, ORC, AVRO, JSON, CSV, XML, Binary, Message Bus, Cloud Storage, Append-only Pipeline, COPY INTO)
+   - Data Transformation and Quality (Spark SQL, PySpark, Window Function, Join, Aggregation, Quarantine, Bad Data, Data Cleansing, Expectations)
+   - Data Sharing and Federation (Delta Sharing, Lakehouse Federation, D2D Sharing, D2O Sharing, Recipient, Provider)
+   - Monitoring and Alerting (System Table, Query Profiler, Spark UI, Event Log, REST API Monitoring, SQL Alert, Job Notification, Observability)
+   - Cost and Performance Optimisation (Deletion Vector, Liquid Clustering, Data Skipping, File Pruning, CDF, Change Data Feed, Query Profile, Z-Order, OPTIMIZE, VACUUM, Auto-Compaction)
+   - Data Security and Compliance (ACL, Row Filter, Column Mask, Anonymization, Pseudonymization, Hashing, Tokenization, PII Masking, Encryption, Data Purging, Retention Policy)
+   - Data Governance (Unity Catalog, Permission Inheritance, Metadata, Data Discovery, Privilege, Service Principal)
+   - Debugging and Deploying (CI/CD, Databricks Asset Bundles, Git Folders, Spark UI Debugging, Cluster Log, Job Repair, Parameter Override, Troubleshooting)
+   - Data Modelling (Delta Lake Table Design, Schema, Partitioning, Liquid Clustering, Dimensional Model, Medallion Architecture, Clone, Star Schema)
 
 2) category: 해당 문제에서 가장 핵심적인 키워드 1개를 반드시 영문으로 출력 (예: "Auto Loader", "VACUUM", "Unity Catalog", "DLT", "Structured Streaming")
 
@@ -77,7 +129,7 @@ title: 세부주제"""
 FALLBACK_PROMPT_TEMPLATE = """Databricks DE Professional 시험 문제 분류:
 문제 키워드: {q_summary}
 
-subject(6개 중 택1): Databricks Tooling / Data Processing / Data Modeling / Security and Governance / Monitoring and Logging / Testing and Deployment
+subject(10개 중 택1): Developing Code for Data Processing / Data Ingestion and Acquisition / Data Transformation and Quality / Data Sharing and Federation / Monitoring and Alerting / Cost and Performance Optimisation / Data Security and Compliance / Data Governance / Debugging and Deploying / Data Modelling
 category: 문제의 가장 핵심적인 키워드 1개 (반드시 영문)
 title: 세부주제를 한글로
 
@@ -445,8 +497,8 @@ def add_new_question_synced(model, sheets_service, q_no_int, q_text, q_options,
 
 
 def sync_row(model, sheets_service, col_map, kor_row, eng_row, kor_sheet_row, eng_sheet_row, log_lines):
-    """Pro_Kor ↔ Pro_Eng 양방향 동기화 (빈 셀만 채움)"""
-    if not eng_sheet_row:
+    """Pro_Kor ↔ Pro_Eng 양방향 동기화 (빈 셀만 채움, 양쪽 행이 모두 있을 때만)"""
+    if not eng_sheet_row or not kor_sheet_row:
         return
 
     for col_name in TRANSLATE_COLS | COPY_COLS:
@@ -501,8 +553,14 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
     main_col_left, main_col_right = st.columns([0.5, 0.5]) # Adjust ratio as needed for the two main sections
 
     with main_col_left:
-        st.subheader('기존 문제 업데이트')
+        st.subheader('업데이트 on 구글시트')
         st.markdown("---") # Visual separator
+
+        source_sheet = st.selectbox(
+            '문제 조회 시트 선택', [SHEET_NAME_PRO_KOR, SHEET_NAME_PRO_ENG],
+            index=0, key='source_sheet'
+        )
+
         col1, col2 = st.columns(2)
         with col1:
             start_question_number = st.number_input(
@@ -516,13 +574,13 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
         st.caption('Overwrite (체크 시 기존 값이 있어도 덮어쓰기)')
         ow1, ow2, ow3, ow4 = st.columns(4)
         with ow1:
-            ow_subject = st.checkbox('subject', key='ow_subject')
+            ow_subject = st.checkbox('subject', value=True, key='ow_subject')
         with ow2:
-            ow_category = st.checkbox('category', key='ow_category')
+            ow_category = st.checkbox('category', value=True, key='ow_category')
         with ow3:
-            ow_title = st.checkbox('title', key='ow_title')
+            ow_title = st.checkbox('title', value=True, key='ow_title')
         with ow4:
-            ow_desc = st.checkbox('desc', key='ow_desc')
+            ow_desc = st.checkbox('desc', value=True, key='ow_desc')
 
         if st.button('시작', type='primary', use_container_width=True, key='start_update_button'):
             if start_question_number > end_question_number:
@@ -537,12 +595,17 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                 kor_header, kor_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_KOR)
                 eng_header, eng_data_rows = read_sheet_data(sheets_service, SHEET_NAME_PRO_ENG)
 
-                if not kor_header:
-                    st.error('Pro_Kor 시트를 읽을 수 없습니다.')
+                # 소스 시트 결정
+                is_source_kor = (source_sheet == SHEET_NAME_PRO_KOR)
+                src_header = kor_header if is_source_kor else eng_header
+
+                if not src_header:
+                    st.error(f'{source_sheet} 시트를 읽을 수 없습니다.')
                 else:
                     has_eng = len(eng_header) > 0
+                    has_kor = len(kor_header) > 0
 
-                    COL = {h.strip().replace('\n', ''): i for i, h in enumerate(kor_header)}
+                    COL = {h.strip().replace('\n', ''): i for i, h in enumerate(src_header)}
                     IDX_SUBJ    = COL.get('subject', 0)
                     IDX_CAT     = COL.get('category', 1)
                     IDX_TITLE   = COL.get('title', 2)
@@ -552,12 +615,13 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                     IDX_DESC    = COL.get('desc', 6)
 
                     # q_no 기준 매핑
-                    kor_qno_map = build_qno_map(kor_data_rows, IDX_QNUM)
+                    kor_qno_map = build_qno_map(kor_data_rows, IDX_QNUM) if has_kor else {}
                     eng_qno_map = build_qno_map(eng_data_rows, IDX_QNUM) if has_eng else {}
 
-                    # 대상 행 필터링
+                    # 소스 시트에서 대상 행 필터링
+                    src_qno_map = kor_qno_map if is_source_kor else eng_qno_map
                     target_nums = sorted(
-                        n for n in kor_qno_map
+                        n for n in src_qno_map
                         if start_question_number <= n <= end_question_number
                     )
 
@@ -584,14 +648,16 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                         for i, num in enumerate(target_nums, 1):
                             q_label = f'Q.{num:03d}'
 
-                            kor_sheet_row, kor_row = kor_qno_map[num]
+                            kor_sheet_row, kor_row = kor_qno_map.get(num, (None, []))
                             eng_sheet_row, eng_row = eng_qno_map.get(num, (None, []))
 
-                            # 기존 값 확인 (한글 시트)
-                            existing_subj = get_val(kor_row, IDX_SUBJ)
-                            existing_cat  = get_val(kor_row, IDX_CAT)
-                            existing_ttl  = get_val(kor_row, IDX_TITLE)
-                            existing_desc = get_val(kor_row, IDX_DESC)
+                            # 소스 시트에서 기존 값 확인
+                            src_row = kor_row if is_source_kor else eng_row
+                            src_sheet_row = kor_sheet_row if is_source_kor else eng_sheet_row
+                            existing_subj = get_val(src_row, IDX_SUBJ)
+                            existing_cat  = get_val(src_row, IDX_CAT)
+                            existing_ttl  = get_val(src_row, IDX_TITLE)
+                            existing_desc = get_val(src_row, IDX_DESC)
 
                             # 헤더행 제외
                             is_header = existing_subj == 'subject'
@@ -617,9 +683,9 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
 
                             status_text.text(f'처리 중: {q_label} ({i}/{total})')
 
-                            q_text    = get_val(kor_row, IDX_QTEXT)
-                            q_choices = get_val(kor_row, IDX_CHOICES)
-                            q_desc    = get_val(kor_row, IDX_DESC)
+                            q_text    = get_val(src_row, IDX_QTEXT)
+                            q_choices = get_val(src_row, IDX_CHOICES)
+                            q_desc    = get_val(src_row, IDX_DESC)
 
                             # --- 1) 분류 ---
                             if need_classify:
@@ -632,27 +698,82 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                                     final_cat  = category or '' if need_cat  else existing_cat
                                     final_ttl  = title or ''    if need_ttl  else existing_ttl
 
-                                    # 한글 시트 업데이트
-                                    update_range(sheets_service, SHEET_NAME_PRO_KOR,
-                                                 kor_sheet_row, 'A', 'C',
-                                                 [final_subj, final_cat, final_ttl])
-
-                                    # 영문 시트 업데이트 (없으면 새 행 추가)
+                                    # title 번역 준비 (classify_row title은 항상 한글)
                                     eng_ttl = translate_text(model, final_ttl, 'kor_to_eng') if final_ttl else ''
                                     time.sleep(1)
+
+                                    # --- Pro_Kor 업데이트/추가 ---
+                                    if kor_sheet_row:
+                                        # subject, category, title 업데이트
+                                        update_range(sheets_service, SHEET_NAME_PRO_KOR,
+                                                     kor_sheet_row, 'A', 'C',
+                                                     [final_subj, final_cat, final_ttl])
+                                        # 빈 셀 채우기: q_text, options, desc
+                                        kor_existing_qtext = get_val(kor_row, IDX_QTEXT)
+                                        kor_existing_opts  = get_val(kor_row, IDX_CHOICES)
+                                        kor_existing_desc  = get_val(kor_row, IDX_DESC)
+                                        if not kor_existing_qtext and q_text:
+                                            val = q_text if is_source_kor else translate_text(model, q_text, 'eng_to_kor'); time.sleep(1)
+                                            update_single_cell(sheets_service, SHEET_NAME_PRO_KOR, kor_sheet_row, col_idx_to_letter(IDX_QTEXT), val)
+                                            log_lines.append(f'  FILL Pro_Kor q_text')
+                                        if not kor_existing_opts and q_choices:
+                                            val = q_choices if is_source_kor else translate_text(model, q_choices, 'eng_to_kor'); time.sleep(1)
+                                            update_single_cell(sheets_service, SHEET_NAME_PRO_KOR, kor_sheet_row, col_idx_to_letter(IDX_CHOICES), val)
+                                            log_lines.append(f'  FILL Pro_Kor options')
+                                        if not kor_existing_desc and q_desc:
+                                            val = q_desc if is_source_kor else translate_text(model, q_desc, 'eng_to_kor'); time.sleep(1)
+                                            update_single_cell(sheets_service, SHEET_NAME_PRO_KOR, kor_sheet_row, col_idx_to_letter(IDX_DESC), val)
+                                            log_lines.append(f'  FILL Pro_Kor desc')
+                                    elif has_kor:
+                                        kor_q_text = q_text if is_source_kor else translate_text(model, q_text, 'eng_to_kor')
+                                        time.sleep(1)
+                                        kor_choices = q_choices if is_source_kor else translate_text(model, q_choices, 'eng_to_kor')
+                                        time.sleep(1)
+                                        kor_desc_val = q_desc if is_source_kor else (translate_text(model, q_desc, 'eng_to_kor') if q_desc else '')
+                                        kor_row_dict = {
+                                            'q_no': q_label, 'q_text': kor_q_text, 'options': kor_choices,
+                                            'subject': final_subj, 'category': final_cat,
+                                            'title': final_ttl, 'desc': kor_desc_val,
+                                        }
+                                        append_row_to_sheet(sheets_service, SHEET_NAME_PRO_KOR, kor_header, kor_row_dict)
+                                        log_lines.append(f'  Pro_Kor에 새 행 추가')
+
+                                    # --- Pro_Eng 업데이트/추가 ---
                                     if eng_sheet_row:
+                                        # subject, category, title 업데이트 (eng_ttl은 이미 영문)
                                         update_range(sheets_service, SHEET_NAME_PRO_ENG,
                                                      eng_sheet_row, 'A', 'C',
                                                      [final_subj, final_cat, eng_ttl])
+                                        # 빈 셀 채우기 + 한글→영문 교정: q_text, options, desc
+                                        for col_name_eng, idx_eng in [('q_text', IDX_QTEXT), ('options', IDX_CHOICES), ('desc', IDX_DESC)]:
+                                            eng_existing_val = get_val(eng_row, idx_eng)
+                                            src_val = get_val(src_row, idx_eng)
+                                            if not eng_existing_val and src_val:
+                                                # 빈 셀 → 영문으로 채우기
+                                                val = src_val if not is_source_kor else translate_text(model, src_val, 'kor_to_eng'); time.sleep(1)
+                                                update_single_cell(sheets_service, SHEET_NAME_PRO_ENG, eng_sheet_row, col_idx_to_letter(idx_eng), val)
+                                                log_lines.append(f'  FILL Pro_Eng {col_name_eng}')
+                                            elif eng_existing_val and is_korean(eng_existing_val):
+                                                # 한글이 남아있으면 영문으로 교정
+                                                val = translate_text(model, eng_existing_val, 'kor_to_eng'); time.sleep(1)
+                                                update_single_cell(sheets_service, SHEET_NAME_PRO_ENG, eng_sheet_row, col_idx_to_letter(idx_eng), val)
+                                                log_lines.append(f'  FIX Pro_Eng {col_name_eng} (한글→영문)')
+                                        # title도 한글 교정 체크 (위에서 eng_ttl로 덮었으므로 보통 OK이지만 안전장치)
+                                        eng_existing_ttl = get_val(eng_row, IDX_TITLE)
+                                        if eng_existing_ttl and is_korean(eng_existing_ttl) and not eng_ttl:
+                                            eng_ttl_fix = translate_text(model, eng_existing_ttl, 'kor_to_eng'); time.sleep(1)
+                                            update_single_cell(sheets_service, SHEET_NAME_PRO_ENG, eng_sheet_row, col_idx_to_letter(IDX_TITLE), eng_ttl_fix)
+                                            log_lines.append(f'  FIX Pro_Eng title (한글→영문)')
                                     elif has_eng:
-                                        # Pro_Eng에 해당 문제가 없으면 번역하여 새 행 추가
-                                        eng_q_text = translate_text(model, q_text, 'kor_to_eng'); time.sleep(1)
-                                        eng_choices = translate_text(model, q_choices, 'kor_to_eng'); time.sleep(1)
-                                        eng_desc = translate_text(model, q_desc, 'kor_to_eng') if q_desc else ''; time.sleep(1)
+                                        eng_q_text = q_text if not is_source_kor else translate_text(model, q_text, 'kor_to_eng')
+                                        time.sleep(1)
+                                        eng_choices = q_choices if not is_source_kor else translate_text(model, q_choices, 'kor_to_eng')
+                                        time.sleep(1)
+                                        eng_desc_val = q_desc if not is_source_kor else (translate_text(model, q_desc, 'kor_to_eng') if q_desc else '')
                                         eng_row_dict = {
                                             'q_no': q_label, 'q_text': eng_q_text, 'options': eng_choices,
                                             'subject': final_subj, 'category': final_cat,
-                                            'title': eng_ttl, 'desc': eng_desc,
+                                            'title': eng_ttl, 'desc': eng_desc_val,
                                         }
                                         append_row_to_sheet(sheets_service, SHEET_NAME_PRO_ENG, eng_header, eng_row_dict)
                                         log_lines.append(f'  Pro_Eng에 새 행 추가')
@@ -681,15 +802,16 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                                 desc_text, desc_err = generate_desc(model, q_label, q_text, q_choices)
                                 if desc_text:
                                     desc_col = col_idx_to_letter(IDX_DESC)
-                                    update_single_cell(sheets_service, SHEET_NAME_PRO_KOR,
-                                                       kor_sheet_row, desc_col, desc_text)
-                                    # 영문 시트에도 번역하여 저장
+                                    # desc는 한글로 생성됨 -> Pro_Kor에 저장
+                                    if kor_sheet_row:
+                                        update_single_cell(sheets_service, SHEET_NAME_PRO_KOR,
+                                                           kor_sheet_row, desc_col, desc_text)
+                                    # 영문 번역 -> Pro_Eng에 저장
                                     if eng_sheet_row:
                                         time.sleep(1)
                                         desc_eng = translate_text(model, desc_text, 'kor_to_eng')
                                         update_single_cell(sheets_service, SHEET_NAME_PRO_ENG,
                                                            eng_sheet_row, desc_col, desc_eng)
-                                    # eng_sheet_row가 없는 경우는 위 분류 단계에서 이미 새 행을 추가했으므로 skip
                                     log_lines.append(f'  desc 생성 완료')
                                 else:
                                     log_lines.append(f'  desc 생성 실패: {desc_err}')
@@ -719,7 +841,7 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
                             st.warning(f'실패 목록: {", ".join(fail_list)}')
 
     with main_col_right:
-        st.subheader('새로운 문제 추가')
+        st.subheader('업데이트 on UI화면')
         st.markdown("---")
         sheets_service_right = get_sheets_service()
         genai.configure(api_key=GEMINI_API_KEY)
