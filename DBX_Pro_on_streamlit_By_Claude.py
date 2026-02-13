@@ -297,6 +297,66 @@ def generate_desc(model, q_num, q_text, q_choices):
     return (result.strip() if result else ''), err
 
 
+def generate_practice_question(model, subject):
+    """선택한 subject 범위에서 Databricks DE Professional 예상 문제 생성"""
+    keywords = SUBJECT_KEYWORDS.get(subject, [])
+    keywords_str = ', '.join(keywords[:15]) if keywords else subject
+
+    prompt = f"""당신은 Databricks Certified Data Engineer Professional 시험 출제 전문가입니다.
+
+아래 주제 영역에서 실제 시험과 유사한 예상 문제 1개를 한글로 작성하세요.
+주제: {subject}
+관련 토픽: {keywords_str}
+
+작성 규칙:
+- 실제 Databricks Certified Data Engineer Professional 시험과 유사한 4지선다 객관식 문제를 작성하세요.
+- 단순 정의가 아닌 실무 지식을 테스트하는 시나리오 기반 문제를 만드세요.
+- 적절한 경우 코드 스니펫이나 구체적인 상황을 포함하세요.
+- 보기는 반드시 A, B, C, D 4개를 제공하고, 정답은 1개만 있어야 합니다.
+- 문제와 보기는 한글로 작성하되, Delta Lake, Auto Loader, Unity Catalog, Spark SQL, PySpark 등 기술 용어는 영문 그대로 사용하세요.
+- 코드나 SQL 구문, 설정값, API 이름 등은 영문 그대로 표기하세요.
+
+아래 형식을 엄격히 따르세요 (추가 텍스트 없이):
+QUESTION:
+[문제 내용]
+OPTIONS:
+A. [보기 A]
+B. [보기 B]
+C. [보기 C]
+D. [보기 D]"""
+
+    result, err = gemini_call(model, prompt, max_tokens=1500)
+    if not result:
+        return '', '', err
+
+    q_text = ''
+    options = ''
+    lines = result.strip().split('\n')
+    mode = None
+    q_lines = []
+    o_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.upper().startswith('QUESTION:'):
+            mode = 'q'
+            rest = stripped[len('QUESTION:'):].strip()
+            if rest:
+                q_lines.append(rest)
+        elif stripped.upper().startswith('OPTIONS:'):
+            mode = 'o'
+            rest = stripped[len('OPTIONS:'):].strip()
+            if rest:
+                o_lines.append(rest)
+        elif mode == 'q':
+            q_lines.append(line)
+        elif mode == 'o':
+            o_lines.append(line)
+
+    q_text = '\n'.join(q_lines).strip()
+    options = '\n'.join(o_lines).strip()
+    return q_text, options, ''
+
+
 def classify_row(model, q_num, q_text, q_choices, q_ref):
     prompt = PROMPT_TEMPLATE.format(
         q_num=q_num,
@@ -529,14 +589,14 @@ def sync_row(model, sheets_service, col_map, kor_row, eng_row, kor_sheet_row, en
 
 
 # --- Streamlit UI ---
-st.set_page_config(page_title='DBX Pro 문제 분류', layout='wide')
+st.set_page_config(page_title='문제은행', layout='wide')
 
 # 사이드바 메뉴
 MENU = {
-    'Databricks Pro 문제은행 업데이트': '🏷️',
+    'Databricks Certified Data Engineer Professional': '🏷️',
 }
 with st.sidebar:
-    st.header('DBX Pro')
+    st.header('문제은행')
     selected_menu = st.radio('메뉴', list(MENU.keys()), format_func=lambda x: f'{MENU[x]} {x}')
     st.divider()
     st.link_button(
@@ -545,12 +605,12 @@ with st.sidebar:
         use_container_width=True,
     )
 
-# --- 페이지: Databricks Pro 문제은행 업데이트 ---
-if selected_menu == 'Databricks Pro 문제은행 업데이트':
-    st.title('Databricks Pro 문제은행 업데이트')
+# --- 페이지: Databricks Certified Data Engineer Professional ---
+if selected_menu == 'Databricks Certified Data Engineer Professional':
+    st.title('Databricks Certified Data Engineer Professional')
 
     # New main columns for the entire page content
-    main_col_left, main_col_right = st.columns([0.5, 0.5]) # Adjust ratio as needed for the two main sections
+    main_col_left, main_col_right = st.columns([0.35, 0.65]) # Adjust ratio as needed for the two main sections
 
     with main_col_left:
         st.subheader('업데이트 on 구글시트')
@@ -853,11 +913,33 @@ if selected_menu == 'Databricks Pro 문제은행 업데이트':
 
         st.markdown("---")
 
-        new_q_no = st.text_input('문제번호 (예: 112)', value=str(max_q_num + 1), key='new_q_no')
-        new_q_text = st.text_area('문제 내용 (한글 또는 영문)', key='new_q_text')
-        new_q_options = st.text_area('보기 (각 보기를 줄바꿈으로 구분)', key='new_q_options')
+        # Subject 선택 + 자동생성 버튼
+        gen_col1, gen_col2 = st.columns([0.7, 0.3])
+        with gen_col1:
+            selected_subject = st.selectbox(
+                'Subject 선택', SUBJECT_LIST, index=0, key='gen_subject'
+            )
+        with gen_col2:
+            st.markdown('<div style="height:28px"></div>', unsafe_allow_html=True)
+            auto_gen_clicked = st.button('자동생성', use_container_width=True, key='auto_gen_button')
 
-        if st.button('문제 추가 (양쪽 시트 동기화)', type='primary', use_container_width=True, key='add_new_question_button'):
+        if auto_gen_clicked:
+            with st.spinner(f'{selected_subject} 예상 문제 생성 중...'):
+                gen_q, gen_opts, gen_err = generate_practice_question(model_right, selected_subject)
+                if gen_q:
+                    st.session_state['new_q_text'] = gen_q
+                    st.session_state['new_q_options'] = gen_opts
+                    st.rerun()
+                else:
+                    st.error(f'문제 생성 실패: {gen_err}')
+
+        add_clicked = st.button('문제 추가 (양쪽 시트 동기화)', type='primary', use_container_width=True, key='add_new_question_button')
+
+        new_q_no = st.text_input('문제번호 (예: 112)', value=str(max_q_num + 1), key='new_q_no')
+        new_q_text = st.text_area('문제 내용 (한글 또는 영문)', height=400, key='new_q_text')
+        new_q_options = st.text_area('보기 (각 보기를 줄바꿈으로 구분)', height=300, key='new_q_options')
+
+        if add_clicked:
             if not new_q_no.strip() or not new_q_text.strip() or not new_q_options.strip():
                 st.error("문제번호, 문제 내용, 보기를 모두 입력해주세요.")
             else:
